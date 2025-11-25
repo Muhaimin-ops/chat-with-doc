@@ -1,10 +1,9 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChatMessage, MessageSender, URLGroup, ChatSession, FeedbackType } from './types';
 import { generateContentStreamWithUrlContext, getInitialSuggestions, identifyRelevantUrls } from './services/geminiService';
 import KnowledgeBaseManager from './components/KnowledgeBaseManager';
@@ -213,8 +212,8 @@ const App: React.FC = () => {
     }
   };
 
-  const activeGroup = urlGroups.find(group => group.id === activeUrlGroupId);
-  const currentUrlsForChat = activeGroup ? activeGroup.urls : [];
+  const activeGroup = useMemo(() => urlGroups.find(group => group.id === activeUrlGroupId), [urlGroups, activeUrlGroupId]);
+  const currentUrlsForChat = useMemo(() => activeGroup ? activeGroup.urls : [], [activeGroup]);
 
   const setWelcomeMessage = (group?: URLGroup) => {
        // Check if API key is likely available (env or local)
