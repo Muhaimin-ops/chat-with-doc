@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import React, { useState } from 'react';
-import { Plus, Trash2, ChevronDown, X, Edit2, Check, History, Book, MessageSquare, Globe, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Plus, Trash2, ChevronDown, X, Edit2, Check, History, Book, MessageSquare, Globe, User, LogOut, Settings } from 'lucide-react';
 import { URLGroup, ChatSession } from '../types';
 import { fetchRelevantUrlsFromSearch } from '../services/geminiService';
 import UrlSuggestionModal from './UrlSuggestionModal';
+import ThemeSwitcher, { ThemeMode, ColorScheme } from './ThemeSwitcher';
 
 interface KnowledgeBaseManagerProps {
   urls: string[];
@@ -27,6 +28,14 @@ interface KnowledgeBaseManagerProps {
   currentSessionId: string | null;
   onNewChat: () => void;
   onSignOut: () => void;
+  onOpenSettings: () => void;
+  userEmail?: string;
+  themeProps?: {
+    mode: ThemeMode;
+    setMode: (mode: ThemeMode) => void;
+    color: ColorScheme;
+    setColor: (color: ColorScheme) => void;
+  };
 }
 
 const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({ 
@@ -45,7 +54,10 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
   onSelectSession,
   currentSessionId,
   onNewChat,
-  onSignOut
+  onSignOut,
+  onOpenSettings,
+  userEmail,
+  themeProps
 }) => {
   const [activeTab, setActiveTab] = useState<'knowledge' | 'history'>('knowledge');
   const [currentUrlInput, setCurrentUrlInput] = useState('');
@@ -61,6 +73,22 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
   const [isFetchingUrls, setIsFetchingUrls] = useState(false);
   const [suggestedUrls, setSuggestedUrls] = useState<string[]>([]);
   const [fetchTopic, setFetchTopic] = useState('');
+
+  // User Profile Dropdown
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const isValidUrl = (urlString: string): boolean => {
     try {
@@ -132,8 +160,6 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
       setSuggestedUrls(results);
     } catch (e) {
       console.error("Failed to fetch URLs", e);
-      // Keep modal open but maybe show error inside? 
-      // For now, empty list handles it.
     } finally {
       setIsFetchingUrls(false);
     }
@@ -149,7 +175,6 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
     if (isCreating) {
       onAddGroup(name);
       cancelGroupAction();
-      // Auto-trigger fetch for the new group
       triggerUrlFetch(name);
     } else if (isRenaming) {
       onRenameGroup(activeUrlGroupId, name);
@@ -173,11 +198,7 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
   };
 
   const handleModalConfirm = (selectedUrls: string[]) => {
-    // Loop to add all confirmed URLs.
-    // Note: In a real app, we'd want a bulk insert endpoint.
-    // Here we rely on the prop which likely does optimistic updates or fast inserts.
     selectedUrls.forEach(url => {
-       // Basic de-dupe check against current list (though parent handles duplicate logic usually)
        if (!urls.includes(url)) {
          onAddUrl(url);
        }
@@ -194,18 +215,19 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
 
   const activeGroupName = urlGroups.find(g => g.id === activeUrlGroupId)?.name;
   const hasGroups = urlGroups.length > 0;
+  const userInitial = userEmail ? userEmail.charAt(0).toUpperCase() : 'U';
 
   return (
     <>
-      <div className="flex flex-col h-full bg-[#1E1E1E] shadow-md rounded-xl border border-[rgba(255,255,255,0.05)] overflow-hidden">
+      <div className="flex flex-col h-full bg-[var(--panel-bg)] shadow-md rounded-xl border border-[var(--border)] overflow-hidden transition-colors duration-200">
         {/* Header */}
-        <div className="p-4 border-b border-[rgba(255,255,255,0.05)]">
+        <div className="p-4 border-b border-[var(--border)]">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-[#E2E2E2]">Library</h2>
+            <h2 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">Documind</h2>
             {onCloseSidebar && (
               <button
                 onClick={onCloseSidebar}
-                className="p-1 text-[#A8ABB4] hover:text-white rounded-md hover:bg-white/10 transition-colors md:hidden"
+                className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md hover:bg-[var(--element-hover)] transition-colors md:hidden"
                 aria-label="Close sidebar"
               >
                 <X size={24} />
@@ -213,13 +235,13 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
             )}
           </div>
           
-          <div className="flex p-1 bg-[#2C2C2C] rounded-lg">
+          <div className="flex p-1 bg-[var(--element-bg)] rounded-lg">
             <button
               onClick={() => setActiveTab('knowledge')}
               className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-all ${
                 activeTab === 'knowledge' 
-                  ? 'bg-[#4A4A4A] text-white shadow-sm' 
-                  : 'text-[#A8ABB4] hover:text-white'
+                  ? 'bg-[var(--panel-bg)] text-[var(--text-primary)] shadow-sm' 
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
             >
               <Book size={14} /> Knowledge
@@ -228,8 +250,8 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
               onClick={() => setActiveTab('history')}
               className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-all ${
                 activeTab === 'history' 
-                  ? 'bg-[#4A4A4A] text-white shadow-sm' 
-                  : 'text-[#A8ABB4] hover:text-white'
+                  ? 'bg-[var(--panel-bg)] text-[var(--text-primary)] shadow-sm' 
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
             >
               <History size={14} /> History
@@ -241,14 +263,14 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
           <div className="flex flex-col flex-grow p-4 overflow-hidden">
             <div className="mb-4">
               <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium text-[#A8ABB4]">
+                <label className="text-sm font-medium text-[var(--text-secondary)]">
                   {isCreating ? "New Group Name" : (isRenaming ? "Rename Group" : "Active Group")}
                 </label>
                 {!isCreating && !isRenaming && (
                   <div className="flex gap-1">
                     <button 
                       onClick={startCreating}
-                      className="p-1 text-[#A8ABB4] hover:text-white hover:bg-white/10 rounded transition-colors"
+                      className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--element-hover)] rounded transition-colors"
                       title="Create New Group"
                     >
                       <Plus size={14} />
@@ -257,14 +279,14 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
                       <>
                         <button 
                           onClick={startRenaming}
-                          className="p-1 text-[#A8ABB4] hover:text-white hover:bg-white/10 rounded transition-colors"
+                          className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--element-hover)] rounded transition-colors"
                           title="Rename Current Group"
                         >
                           <Edit2 size={14} />
                         </button>
                         <button 
                           onClick={handleDeleteActiveGroup}
-                          className="p-1 text-[#A8ABB4] hover:text-[#f87171] hover:bg-white/10 rounded transition-colors"
+                          className="p-1 text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--element-hover)] rounded transition-colors"
                           title="Delete Current Group"
                         >
                           <Trash2 size={14} />
@@ -283,19 +305,19 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
                     onChange={(e) => setTempGroupName(e.target.value)}
                     placeholder="Group Name"
                     autoFocus
-                    className="flex-grow h-9 px-2.5 border border-[rgba(255,255,255,0.1)] bg-[#2C2C2C] text-[#E2E2E2] rounded-md focus:ring-1 focus:ring-white/20 focus:border-white/20 text-sm"
+                    className="flex-grow h-9 px-2.5 border border-[var(--border)] bg-[var(--element-bg)] text-[var(--text-primary)] rounded-md focus:ring-1 focus:ring-[var(--accent)] focus:border-[var(--accent)] text-sm outline-none"
                     onKeyDown={handleKeyDown}
                   />
                   <button
                     onClick={saveGroupAction}
-                    className="p-2 bg-[#79B8FF]/20 text-[#79B8FF] rounded-md hover:bg-[#79B8FF]/30 transition-colors"
+                    className="p-2 bg-[var(--accent-dim)] text-[var(--accent-text)] rounded-md hover:opacity-80 transition-colors"
                     title="Save"
                   >
                     <Check size={16} />
                   </button>
                   <button
                     onClick={cancelGroupAction}
-                    className="p-2 bg-white/[.05] text-[#A8ABB4] rounded-md hover:bg-white/[.1] transition-colors"
+                    className="p-2 bg-[var(--element-bg)] text-[var(--text-secondary)] rounded-md hover:bg-[var(--element-hover)] transition-colors"
                     title="Cancel"
                   >
                     <X size={16} />
@@ -308,7 +330,7 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
                       <select
                         value={activeUrlGroupId}
                         onChange={(e) => onSetGroupId(e.target.value)}
-                        className="w-full py-2 pl-3 pr-8 appearance-none border border-[rgba(255,255,255,0.1)] bg-[#2C2C2C] text-[#E2E2E2] rounded-md focus:ring-1 focus:ring-white/20 focus:border-white/20 text-sm truncate"
+                        className="w-full py-2 pl-3 pr-8 appearance-none border border-[var(--border)] bg-[var(--element-bg)] text-[var(--text-primary)] rounded-md focus:ring-1 focus:ring-[var(--accent)] focus:border-[var(--accent)] text-sm truncate outline-none"
                       >
                         {urlGroups.map(group => (
                           <option key={group.id} value={group.id}>
@@ -317,13 +339,13 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
                         ))}
                       </select>
                       <ChevronDown
-                        className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#A8ABB4] pointer-events-none"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-secondary)] pointer-events-none"
                         aria-hidden="true"
                       />
                     </>
                   ) : (
                     <div 
-                      className="text-sm text-[#A8ABB4] italic py-2 px-3 border border-[rgba(255,255,255,0.1)] bg-[#2C2C2C] rounded-md cursor-pointer hover:bg-[#363636] transition-colors flex items-center gap-2"
+                      className="text-sm text-[var(--text-secondary)] italic py-2 px-3 border border-[var(--border)] bg-[var(--element-bg)] rounded-md cursor-pointer hover:bg-[var(--element-hover)] transition-colors flex items-center gap-2"
                       onClick={startCreating}
                     >
                       <Plus size={14} />
@@ -341,14 +363,14 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
                 onChange={(e) => setCurrentUrlInput(e.target.value)}
                 placeholder="Add URL..."
                 disabled={!hasGroups}
-                className="flex-grow h-8 py-1 px-2.5 border border-[rgba(255,255,255,0.1)] bg-[#2C2C2C] text-[#E2E2E2] placeholder-[#777777] rounded-lg focus:ring-1 focus:ring-white/20 focus:border-white/20 transition-shadow text-sm disabled:opacity-50"
+                className="flex-grow h-8 py-1 px-2.5 border border-[var(--border)] bg-[var(--element-bg)] text-[var(--text-primary)] placeholder-[var(--text-muted)] rounded-lg focus:ring-1 focus:ring-[var(--accent)] focus:border-[var(--accent)] transition-shadow text-sm disabled:opacity-50 outline-none"
                 onKeyPress={(e) => e.key === 'Enter' && handleAddUrl()}
               />
               {/* Manual Fetch Button */}
               <button
                 onClick={handleManualFetchClick}
                 disabled={!hasGroups}
-                className="h-8 w-8 p-1.5 bg-[#79B8FF]/10 hover:bg-[#79B8FF]/20 text-[#79B8FF] rounded-lg transition-colors disabled:bg-[#4A4A4A] disabled:text-[#777777] flex items-center justify-center disabled:opacity-50"
+                className="h-8 w-8 p-1.5 bg-[var(--accent-dim)] hover:opacity-80 text-[var(--accent-text)] rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center"
                 title={`Find ${activeGroupName ? activeGroupName : 'URLs'} on the web`}
               >
                 <Globe size={16} />
@@ -357,30 +379,30 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
               <button
                 onClick={handleAddUrl}
                 disabled={!hasGroups || urls.length >= maxUrls}
-                className="h-8 w-8 p-1.5 bg-white/[.12] hover:bg-white/20 text-white rounded-lg transition-colors disabled:bg-[#4A4A4A] disabled:text-[#777777] flex items-center justify-center disabled:opacity-50"
+                className="h-8 w-8 p-1.5 bg-[var(--element-bg)] hover:bg-[var(--element-hover)] text-[var(--text-primary)] rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center border border-[var(--border)]"
                 aria-label="Add URL"
               >
                 <Plus size={16} />
               </button>
             </div>
-            {error && <p className="text-xs text-[#f87171] mb-2">{error}</p>}
-            {hasGroups && urls.length >= maxUrls && <p className="text-xs text-[#fbbf24] mb-2">Maximum {maxUrls} URLs reached for this group.</p>}
+            {error && <p className="text-xs text-[var(--danger)] mb-2">{error}</p>}
+            {hasGroups && urls.length >= maxUrls && <p className="text-xs text-yellow-500 mb-2">Maximum {maxUrls} URLs reached for this group.</p>}
             
             <div className="flex-grow overflow-y-auto space-y-2 chat-container">
               {hasGroups && urls.length === 0 && (
-                <p className="text-[#777777] text-center py-3 text-sm">Add documentation URLs to "{activeGroupName}" to start querying.</p>
+                <p className="text-[var(--text-muted)] text-center py-3 text-sm">Add documentation URLs to "{activeGroupName}" to start querying.</p>
               )}
               {!hasGroups && (
-                <p className="text-[#777777] text-center py-3 text-sm">Create a group to start adding URLs.</p>
+                <p className="text-[var(--text-muted)] text-center py-3 text-sm">Create a group to start adding URLs.</p>
               )}
               {urls.map((url) => (
-                <div key={url} className="flex items-center justify-between p-2.5 bg-[#2C2C2C] border border-[rgba(255,255,255,0.05)] rounded-lg hover:shadow-sm transition-shadow">
-                  <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#79B8FF] hover:underline truncate" title={url}>
+                <div key={url} className="flex items-center justify-between p-2.5 bg-[var(--element-bg)] border border-[var(--border)] rounded-lg hover:shadow-sm transition-shadow">
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--accent-text)] hover:underline truncate" title={url}>
                     {url}
                   </a>
                   <button 
                     onClick={() => onRemoveUrl(url)}
-                    className="p-1 text-[#A8ABB4] hover:text-[#f87171] rounded-md hover:bg-[rgba(255,0,0,0.1)] transition-colors flex-shrink-0 ml-2"
+                    className="p-1 text-[var(--text-secondary)] hover:text-[var(--danger)] rounded-md hover:bg-[var(--app-bg)] transition-colors flex-shrink-0 ml-2"
                     aria-label={`Remove ${url}`}
                   >
                     <Trash2 size={16} />
@@ -395,14 +417,14 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
           <div className="flex flex-col flex-grow p-4 overflow-hidden">
             <button
               onClick={onNewChat}
-              className="w-full flex items-center justify-center gap-2 py-2 mb-4 bg-[#79B8FF]/20 text-[#79B8FF] hover:bg-[#79B8FF]/30 rounded-lg transition-colors text-sm font-medium"
+              className="w-full flex items-center justify-center gap-2 py-2 mb-4 bg-[var(--accent-dim)] text-[var(--accent-text)] hover:opacity-80 rounded-lg transition-colors text-sm font-medium"
             >
               <Plus size={16} /> New Chat
             </button>
             
             <div className="flex-grow overflow-y-auto space-y-2 chat-container">
               {chatSessions.length === 0 ? (
-                 <p className="text-[#777777] text-center py-3 text-sm">No chat history yet.</p>
+                 <p className="text-[var(--text-muted)] text-center py-3 text-sm">No chat history yet.</p>
               ) : (
                 chatSessions.map(session => (
                   <button
@@ -410,8 +432,8 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
                     onClick={() => onSelectSession(session.id)}
                     className={`w-full text-left p-3 rounded-lg border transition-all ${
                       currentSessionId === session.id
-                        ? 'bg-[#4A4A4A] border-white/10 text-white'
-                        : 'bg-[#2C2C2C] border-transparent text-[#A8ABB4] hover:bg-[#363636] hover:text-[#E2E2E2]'
+                        ? 'bg-[var(--element-hover)] border-[var(--border)] text-[var(--text-primary)]'
+                        : 'bg-[var(--element-bg)] border-transparent text-[var(--text-secondary)] hover:bg-[var(--element-hover)]'
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
@@ -428,13 +450,46 @@ const KnowledgeBaseManager: React.FC<KnowledgeBaseManagerProps> = ({
           </div>
         )}
 
-        <div className="p-4 border-t border-[rgba(255,255,255,0.05)] mt-auto">
+        <div className="p-4 border-t border-[var(--border)] mt-auto relative" ref={profileRef}>
           <button
-            onClick={onSignOut}
-            className="w-full py-2 px-4 bg-red-900/20 hover:bg-red-900/30 text-red-400 rounded-lg text-xs font-medium transition-colors"
+            onClick={() => setIsProfileOpen(!isProfileOpen)}
+            className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--element-hover)] transition-colors text-left"
           >
-            Sign Out
+            <div className="w-8 h-8 rounded-full bg-[var(--accent)] text-[var(--app-bg)] flex items-center justify-center font-bold">
+              {userInitial}
+            </div>
+            <div className="flex-grow min-w-0">
+              <p className="text-sm font-medium text-[var(--text-primary)] truncate">{userEmail || 'User'}</p>
+              <p className="text-xs text-[var(--text-secondary)] truncate">Free Plan</p>
+            </div>
+            <ChevronDown size={14} className={`text-[var(--text-secondary)] transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
           </button>
+
+          {isProfileOpen && (
+            <div className="absolute bottom-full left-4 right-4 mb-2 bg-[var(--element-bg)] border border-[var(--border)] rounded-lg shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200 z-50">
+              {themeProps && (
+                 <ThemeSwitcher {...themeProps} />
+              )}
+              <div className="h-px bg-[var(--border)]"></div>
+              <div className="p-1">
+                 <button 
+                   onClick={() => {
+                     setIsProfileOpen(false);
+                     onOpenSettings();
+                   }}
+                   className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--element-hover)] rounded-md transition-colors"
+                 >
+                   <Settings size={14} /> Settings
+                 </button>
+                 <button 
+                  onClick={onSignOut}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-[var(--danger)] hover:bg-[var(--danger)]/10 rounded-md transition-colors"
+                >
+                   <LogOut size={14} /> Sign Out
+                 </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

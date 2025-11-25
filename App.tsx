@@ -9,9 +9,12 @@ import { ChatMessage, MessageSender, URLGroup, ChatSession, FeedbackType } from 
 import { generateContentStreamWithUrlContext, getInitialSuggestions, identifyRelevantUrls } from './services/geminiService';
 import KnowledgeBaseManager from './components/KnowledgeBaseManager';
 import ChatInterface from './components/ChatInterface';
+import LandingPage from './components/LandingPage';
+import SettingsModal from './components/SettingsModal';
 import { supabase } from './lib/supabaseClient';
 import Auth from './components/Auth';
 import { Session } from '@supabase/supabase-js';
+import { ThemeMode, ColorScheme } from './components/ThemeSwitcher';
 
 // Default URLs to seed for new users
 const GEMINI_DOCS_URLS = [
@@ -34,6 +37,21 @@ const INITIAL_DEFAULT_GROUPS = [
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   
+  // App Flow State
+  const [showLanding, setShowLanding] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Theme State
+  const [themeMode, setThemeMode] = useState<ThemeMode>('dark');
+  const [colorScheme, setColorScheme] = useState<ColorScheme>('blue');
+
+  // Apply Theme
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-theme', themeMode);
+    root.setAttribute('data-color', colorScheme);
+  }, [themeMode, colorScheme]);
+
   const [urlGroups, setUrlGroups] = useState<URLGroup[]>([]);
   const [activeUrlGroupId, setActiveUrlGroupId] = useState<string>('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -41,6 +59,7 @@ const App: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [currentSessionTitle, setCurrentSessionTitle] = useState<string>("Documentation Browser");
 
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
@@ -50,9 +69,14 @@ const App: React.FC = () => {
   const MAX_URLS = 20;
 
   useEffect(() => {
+    // Check if user was previously signed in to skip landing if desired
+    // For now, we always show landing on first load unless valid session exists immediately
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setAuthLoading(false);
+      if (session) {
+        setShowLanding(false); // Skip landing if already logged in
+      }
     });
 
     const {
@@ -60,6 +84,7 @@ const App: React.FC = () => {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setAuthLoading(false);
+      if (session) setShowLanding(false);
     });
 
     return () => subscription.unsubscribe();
@@ -153,6 +178,7 @@ const App: React.FC = () => {
             setChatMessages([]);
             const activeGroup = urlGroups.find(group => group.id === activeUrlGroupId);
             setWelcomeMessage(activeGroup);
+            setCurrentSessionTitle("New Conversation");
          }
        }
     };
@@ -161,6 +187,10 @@ const App: React.FC = () => {
 
   const loadSession = async (sessionId: string) => {
     setCurrentSessionId(sessionId);
+    // Find title from sessions list
+    const sessionMeta = chatSessions.find(s => s.id === sessionId);
+    if (sessionMeta) setCurrentSessionTitle(sessionMeta.title);
+
     const { data, error } = await supabase
       .from('chat_messages')
       .select('*')
@@ -187,12 +217,19 @@ const App: React.FC = () => {
   const currentUrlsForChat = activeGroup ? activeGroup.urls : [];
 
   const setWelcomeMessage = (group?: URLGroup) => {
-      const apiKey = process.env.API_KEY;
-       const welcomeMessageText = !apiKey 
-        ? 'ERROR: Gemini API Key (process.env.API_KEY) is not configured. Please set this environment variable to use the application.'
-        : group 
-            ? `Welcome to Documentation Browser! You're currently browsing content from: "${group.name}". Just ask me questions, or try one of the suggestions below to get started`
-            : `Welcome! Create a URL group and add documentation links to get started.`;
+       // Check if API key is likely available (env or local)
+       const hasLocalKey = typeof window !== 'undefined' && localStorage.getItem('DOCUMIND_API_KEY');
+       const hasEnvKey = !!process.env.API_KEY;
+       
+       let welcomeMessageText = "";
+
+       if (!hasLocalKey && !hasEnvKey) {
+          welcomeMessageText = "⚠️ **Action Required:** Please go to Settings (User Profile) and add your Gemini API Key to start using Documind.";
+       } else {
+          welcomeMessageText = group 
+            ? `Welcome to **Documind**! You're currently browsing content from: "${group.name}". I am here to help you implement SDKs and APIs. Ask me technical questions based on the docs!`
+            : `Welcome to **Documind**! Create a URL group and add documentation links to get started.`;
+       }
     
      setChatMessages([{
       id: `system-welcome-${Date.now()}`,
@@ -235,19 +272,21 @@ const App: React.FC = () => {
             suggestionsArray = parsed.suggestions.filter((s: unknown) => typeof s === 'string');
           }
         } catch (parseError) {
-          console.error("Failed to parse suggestions JSON:", parseError);
+          // Silent fail on parse
         }
       }
-      setInitialQuerySuggestions(suggestionsArray.slice(0, 4)); 
+      setInitialQuerySuggestions(suggestionsArray.slice(4)); // Limit to 4
     } catch (e: any) {
-      console.error("Error fetching suggestions:", e);
+      // Silent fail on fetch
     } finally {
       setIsFetchingSuggestions(false);
     }
   }, []); 
 
   useEffect(() => {
-    if (currentUrlsForChat.length > 0 && process.env.API_KEY) { 
+    // Attempt fetch only if keys exist
+    const hasKey = process.env.API_KEY || localStorage.getItem('DOCUMIND_API_KEY');
+    if (currentUrlsForChat.length > 0 && hasKey) { 
         fetchAndSetInitialSuggestions(currentUrlsForChat);
     } else {
         setInitialQuerySuggestions([]); 
@@ -361,7 +400,16 @@ const App: React.FC = () => {
      setCurrentSessionId(null);
      setChatMessages([]);
      setWelcomeMessage(activeGroup);
+     setCurrentSessionTitle("New Conversation");
      setIsSidebarOpen(false); 
+  };
+
+  const handleUpdateSessionTitle = async (newTitle: string) => {
+      setCurrentSessionTitle(newTitle);
+      if (currentSessionId) {
+          setChatSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, title: newTitle } : s));
+          await supabase.from('chat_sessions').update({ title: newTitle }).eq('id', currentSessionId);
+      }
   };
 
   const handleFeedback = async (messageId: string, feedback: FeedbackType) => {
@@ -379,19 +427,25 @@ const App: React.FC = () => {
           .single();
           
         if (data) {
-           const newMetadata = { ...data.metadata, feedback };
+           const currentMeta = data.metadata || {};
+           const newMetadata = { ...currentMeta, feedback };
            await supabase.from('chat_messages').update({ metadata: newMetadata }).eq('id', messageId);
         }
      }
   };
-
+  
   // --- Step 1: Handle Initial Query -> Identify Relevant URLs ---
   const handleSendMessage = async (query: string) => {
     if (!query.trim() || isLoading || isFetchingSuggestions) return;
     if (!session) return;
 
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return;
+    // Check for keys
+    const hasKey = process.env.API_KEY || localStorage.getItem('DOCUMIND_API_KEY');
+    if (!hasKey) {
+        setIsSettingsOpen(true);
+        alert("Please configure your API Key in settings first.");
+        return;
+    }
     
     setIsLoading(true);
     setInitialQuerySuggestions([]); 
@@ -409,6 +463,7 @@ const App: React.FC = () => {
        if (data && !error) {
           activeSessionId = data.id;
           setCurrentSessionId(data.id);
+          setCurrentSessionTitle(title);
           setChatSessions(prev => [data, ...prev]);
        } else {
          console.error("Failed to create session", error);
@@ -418,20 +473,25 @@ const App: React.FC = () => {
     }
 
     // 1. Save User Message
+    const tempUserMsgId = `user-${Date.now()}`;
     const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: tempUserMsgId,
       text: query,
       sender: MessageSender.USER,
       timestamp: new Date(),
     };
     setChatMessages(prevMessages => [...prevMessages, userMessage]);
     
-    await supabase.from('chat_messages').insert({
+    const { data: savedUserMsg } = await supabase.from('chat_messages').insert({
         session_id: activeSessionId,
         sender: MessageSender.USER,
         content: query,
         created_at: new Date()
-    });
+    }).select().single();
+
+    if (savedUserMsg) {
+      setChatMessages(prev => prev.map(msg => msg.id === tempUserMsgId ? { ...msg, id: savedUserMsg.id } : msg));
+    }
 
     // 2. Add placeholder for "Analzying"
     const selectionPlaceholderId = `selection-${Date.now()}`;
@@ -463,8 +523,8 @@ const App: React.FC = () => {
             : msg
         ));
 
-        // Save this state to DB so it persists on reload
-        await supabase.from('chat_messages').insert({
+        // Save this state to DB
+        const { data: savedPlaceholder } = await supabase.from('chat_messages').insert({
             session_id: activeSessionId,
             sender: MessageSender.MODEL,
             content: "", 
@@ -473,13 +533,17 @@ const App: React.FC = () => {
                 sourceSelection: { originalQuery: query, urls: relevantUrls }
             },
             created_at: new Date()
-        });
+        }).select().single();
+
+        if (savedPlaceholder) {
+          setChatMessages(prev => prev.map(msg => msg.id === selectionPlaceholderId ? { ...msg, id: savedPlaceholder.id } : msg));
+        }
 
     } catch (e: any) {
         console.error("Error identifying urls", e);
         setChatMessages(prev => prev.map(msg => 
             msg.id === selectionPlaceholderId 
-            ? { ...msg, text: "Error identifying relevant sources.", isLoading: false }
+            ? { ...msg, text: `Error: ${e.message}`, isLoading: false }
             : msg
         ));
     } finally {
@@ -491,10 +555,10 @@ const App: React.FC = () => {
   const handleConfirmSources = async (messageId: string, selectedUrls: string[], originalQuery: string) => {
     if (!currentSessionId) return;
 
-    let activeMessageId = messageId;
+    let dbMessageId = messageId;
     
-    // Find the message in DB to update
-    const { data: dbMessage } = await supabase
+    if (messageId.startsWith('selection-')) {
+       const { data: dbMessage } = await supabase
         .from('chat_messages')
         .select('id')
         .eq('session_id', currentSessionId)
@@ -502,18 +566,22 @@ const App: React.FC = () => {
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
-    
-    const dbMessageId = dbMessage?.id;
+       
+       if (dbMessage) {
+         dbMessageId = dbMessage.id;
+       } else {
+         dbMessageId = '';
+       }
+    }
 
-    // Update UI to "Thinking" / Streaming start state
     setChatMessages(prev => prev.map(msg => {
         if (msg.id === messageId || (msg.sourceSelection && msg.sourceSelection.originalQuery === originalQuery && msg.isSourceConfirmationPending)) {
             return {
                 ...msg,
-                id: dbMessageId || msg.id, // Sync ID if possible
+                id: dbMessageId || msg.id,
                 isSourceConfirmationPending: false,
                 isLoading: true,
-                text: "" // Clear text for streaming
+                text: ""
             };
         }
         return msg;
@@ -532,13 +600,12 @@ const App: React.FC = () => {
                 finalUrlContext = chunk.urlContextMetadata;
             }
 
-            // Update UI incrementally
             setChatMessages(prev => prev.map(msg => {
                  if (msg.id === (dbMessageId || messageId) || (msg.isLoading && msg.sender === MessageSender.MODEL && msg.text === accumulatedText.slice(0, -chunk.textChunk.length))) {
                      return {
                          ...msg,
                          text: accumulatedText,
-                         isLoading: true, // Still loading until done
+                         isLoading: true,
                          urlContext: chunk.urlContextMetadata || msg.urlContext
                      };
                  }
@@ -546,7 +613,6 @@ const App: React.FC = () => {
             }));
         }
 
-        // Final UI update
         setChatMessages(prev => prev.map(msg => {
              if (msg.id === (dbMessageId || messageId) || (msg.isLoading && msg.sender === MessageSender.MODEL)) {
                  return {
@@ -560,8 +626,6 @@ const App: React.FC = () => {
              return msg;
         }));
 
-        // Auto-save: Update DB with final content
-        // IMPORTANT: We preserve the `sourceSelection` in metadata so we can regenerate later if needed.
         if (dbMessageId) {
              await supabase.from('chat_messages').update({
                  content: accumulatedText,
@@ -572,8 +636,7 @@ const App: React.FC = () => {
                  } 
              }).eq('id', dbMessageId);
         } else {
-            // Fallback insert
-            await supabase.from('chat_messages').insert({
+            const { data: savedModelMsg } = await supabase.from('chat_messages').insert({
                 session_id: currentSessionId,
                 sender: MessageSender.MODEL,
                 content: accumulatedText,
@@ -582,7 +645,16 @@ const App: React.FC = () => {
                     sourceSelection: { originalQuery: originalQuery, urls: selectedUrls }
                 },
                 created_at: new Date()
-            });
+            }).select().single();
+
+            if (savedModelMsg) {
+                 setChatMessages(prev => prev.map(msg => {
+                     if (msg.id === messageId || (msg.text === accumulatedText && msg.sender === MessageSender.MODEL)) {
+                         return { ...msg, id: savedModelMsg.id };
+                     }
+                     return msg;
+                 }));
+            }
         }
 
     } catch (e: any) {
@@ -603,15 +675,28 @@ const App: React.FC = () => {
     : "Select a group and/or add URLs to the knowledge base to enable chat.";
 
   if (authLoading) {
-     return <div className="h-screen w-screen flex items-center justify-center bg-[#121212] text-white">Loading...</div>;
+     return <div className="h-screen w-screen flex items-center justify-center bg-[var(--app-bg)] text-[var(--text-primary)]">Loading...</div>;
+  }
+
+  // --- ROUTING ---
+
+  if (showLanding) {
+     return <LandingPage onGetStarted={() => setShowLanding(false)} onSignIn={() => setShowLanding(false)} />;
   }
 
   if (!session) {
-    return <Auth />;
+    return (
+      <Auth 
+         themeMode={themeMode} 
+         setThemeMode={setThemeMode} 
+         colorScheme={colorScheme} 
+         setColorScheme={setColorScheme} 
+      />
+    );
   }
 
   return (
-    <div className="h-screen max-h-screen antialiased relative overflow-x-hidden bg-[#121212] text-[#E2E2E2]">
+    <div className="h-screen max-h-screen antialiased relative overflow-x-hidden bg-[var(--app-bg)] text-[var(--text-primary)] transition-colors duration-200">
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/60 z-20 md:hidden"
@@ -647,6 +732,14 @@ const App: React.FC = () => {
             currentSessionId={currentSessionId}
             onNewChat={handleNewChat}
             onSignOut={() => supabase.auth.signOut()}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            userEmail={session.user.email}
+            themeProps={{
+              mode: themeMode,
+              setMode: setThemeMode,
+              color: colorScheme,
+              setColor: setColorScheme
+            }}
           />
         </div>
 
@@ -663,9 +756,16 @@ const App: React.FC = () => {
             onToggleSidebar={() => setIsSidebarOpen(true)}
             onConfirmSources={handleConfirmSources}
             onFeedback={handleFeedback}
+            sessionTitle={currentSessionTitle}
+            onUpdateSessionTitle={handleUpdateSessionTitle}
           />
         </div>
       </div>
+
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+      />
     </div>
   );
 };

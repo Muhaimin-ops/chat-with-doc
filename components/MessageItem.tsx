@@ -33,20 +33,20 @@ const SenderAvatar: React.FC<{ sender: MessageSender }> = ({ sender }) => {
 
   if (sender === MessageSender.USER) {
     avatarChar = 'U';
-    bgColorClass = 'bg-white/[.12]';
-    textColorClass = 'text-white';
+    bgColorClass = 'bg-[var(--accent)]';
+    textColorClass = 'text-[var(--app-bg)]';
   } else if (sender === MessageSender.MODEL) {
     avatarChar = 'AI';
-    bgColorClass = 'bg-[#777777]'; 
-    textColorClass = 'text-[#E2E2E2]';
+    bgColorClass = 'bg-[var(--element-hover)]'; 
+    textColorClass = 'text-[var(--text-primary)]';
   } else { // SYSTEM
     avatarChar = 'S';
-    bgColorClass = 'bg-[#4A4A4A]';
-    textColorClass = 'text-[#E2E2E2]';
+    bgColorClass = 'bg-[var(--element-bg)]';
+    textColorClass = 'text-[var(--text-secondary)]';
   }
 
   return (
-    <div className={`w-8 h-8 rounded-full ${bgColorClass} ${textColorClass} flex items-center justify-center text-sm font-semibold flex-shrink-0`}>
+    <div className={`w-8 h-8 rounded-full ${bgColorClass} ${textColorClass} flex items-center justify-center text-sm font-semibold flex-shrink-0 shadow-sm`}>
       {avatarChar}
     </div>
   );
@@ -70,7 +70,10 @@ const SourceSelectionUI: React.FC<{
 
   const handleAddUrl = () => {
     if (newUrl.trim()) {
-      setSelectedUrls(prev => [...prev, newUrl.trim()]);
+      const url = newUrl.trim();
+      if (!selectedUrls.includes(url)) {
+          setSelectedUrls(prev => [...prev, url]);
+      }
       setNewUrl('');
       setIsAdding(false);
     }
@@ -81,33 +84,33 @@ const SourceSelectionUI: React.FC<{
   };
 
   return (
-    <div className="mt-2 p-3 bg-black/20 rounded-lg border border-white/10 w-full">
+    <div className="mt-2 p-3 bg-[var(--app-bg)] rounded-lg border border-[var(--border)] w-full">
       <div className="flex justify-between items-center mb-2">
-        <h4 className="text-sm font-semibold text-white">Select Context Sources</h4>
-        <span className="text-xs text-[#A8ABB4]">{selectedUrls.length} selected</span>
+        <h4 className="text-sm font-semibold text-[var(--text-primary)]">Select Context Sources</h4>
+        <span className="text-xs text-[var(--text-secondary)]">{selectedUrls.length} selected</span>
       </div>
-      <p className="text-xs text-[#A8ABB4] mb-3">
+      <p className="text-xs text-[var(--text-secondary)] mb-3">
         I found these sources relevant to your query. Please review, add, or remove sources before I generate an answer.
       </p>
       
       <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
         {selectedUrls.map((url, idx) => (
-          <div key={`${url}-${idx}`} className="flex items-center gap-2 p-2 bg-white/5 rounded-md group">
+          <div key={`${url}-${idx}`} className="flex items-center gap-2 p-2 bg-[var(--element-bg)] rounded-md group border border-transparent hover:border-[var(--border)]">
             <button 
               onClick={() => toggleUrl(url)}
-              className="text-[#79B8FF] hover:text-[#79B8FF]/80 transition-colors"
+              className={`transition-colors ${selectedUrls.includes(url) ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}
             >
               <CheckSquare size={16} />
             </button>
             <div className="flex-grow min-w-0">
-               <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#E2E2E2] hover:text-white truncate block flex items-center gap-1">
+               <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--text-primary)] hover:underline truncate block flex items-center gap-1">
                  <span className="truncate">{url}</span>
                  <ExternalLink size={10} className="opacity-50" />
                </a>
             </div>
             <button 
               onClick={() => removeUrl(url)}
-              className="text-[#A8ABB4] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="text-[var(--text-secondary)] hover:text-[var(--danger)] opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <Trash2 size={14} />
             </button>
@@ -121,28 +124,33 @@ const SourceSelectionUI: React.FC<{
               value={newUrl}
               onChange={(e) => setNewUrl(e.target.value)}
               placeholder="https://..."
-              className="flex-grow text-xs bg-black/20 border border-white/10 rounded px-2 py-1 text-white focus:border-[#79B8FF]"
+              className="flex-grow text-xs bg-[var(--element-bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)] focus:border-[var(--accent)] outline-none"
               autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()}
+              onKeyDown={(e) => {
+                 if (e.key === 'Enter') handleAddUrl();
+                 if (e.key === 'Escape') setIsAdding(false);
+              }}
             />
-            <button onClick={handleAddUrl} className="text-[#79B8FF] text-xs hover:underline">Add</button>
-            <button onClick={() => setIsAdding(false)} className="text-[#A8ABB4] text-xs hover:underline">Cancel</button>
+            <button onClick={handleAddUrl} className="text-[var(--accent-text)] text-xs hover:underline">Add</button>
+            <button onClick={() => setIsAdding(false)} className="text-[var(--text-secondary)] text-xs hover:underline">Cancel</button>
           </div>
         ) : (
-          <button 
-            onClick={() => setIsAdding(true)}
-            className="flex items-center gap-1 text-xs text-[#A8ABB4] hover:text-[#79B8FF] py-1 px-2"
-          >
-            <Plus size={12} /> Add another URL
-          </button>
+          <div className="flex items-center gap-2 mt-2">
+             <button 
+                onClick={() => setIsAdding(true)}
+                className="flex items-center gap-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-text)] py-1 px-2 rounded hover:bg-[var(--element-hover)] transition-colors"
+              >
+                <Plus size={12} /> Add another URL
+              </button>
+          </div>
         )}
       </div>
 
-      <div className="flex justify-end pt-2 border-t border-white/10">
+      <div className="flex justify-end pt-2 border-t border-[var(--border)]">
         <button
           onClick={() => onConfirm(messageId, selectedUrls, originalQuery)}
           disabled={selectedUrls.length === 0}
-          className="flex items-center gap-2 bg-[#79B8FF]/20 hover:bg-[#79B8FF]/30 text-[#79B8FF] px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 bg-[var(--accent-dim)] hover:opacity-80 text-[var(--accent-text)] px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Generate Answer <ArrowRight size={14} />
         </button>
@@ -175,10 +183,10 @@ const ActionBar: React.FC<{
   };
 
   return (
-    <div className="flex items-center gap-2 mt-3 border-t border-[rgba(255,255,255,0.08)] pt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="flex items-center gap-2 mt-3 border-t border-[var(--border)] pt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
       <button 
         onClick={handleCopy}
-        className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-[#A8ABB4] hover:text-white rounded hover:bg-white/10 transition-colors"
+        className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded hover:bg-[var(--element-hover)] transition-colors"
         title="Copy to clipboard"
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}
@@ -188,7 +196,7 @@ const ActionBar: React.FC<{
       {onRegenerate && message.sourceSelection && (
         <button 
           onClick={handleRegenerate}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-[#A8ABB4] hover:text-white rounded hover:bg-white/10 transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded hover:bg-[var(--element-hover)] transition-colors"
           title="Regenerate response"
         >
           <RotateCcw size={14} />
@@ -200,14 +208,14 @@ const ActionBar: React.FC<{
         <div className="flex items-center gap-1 ml-auto">
           <button 
             onClick={() => onFeedback(message.id, message.feedback === 'positive' ? null : 'positive')}
-            className={`p-1.5 rounded hover:bg-white/10 transition-colors ${message.feedback === 'positive' ? 'text-green-400' : 'text-[#A8ABB4] hover:text-green-400'}`}
+            className={`p-1.5 rounded hover:bg-[var(--element-hover)] transition-colors ${message.feedback === 'positive' ? 'text-[var(--success)]' : 'text-[var(--text-secondary)] hover:text-[var(--success)]'}`}
             title="Good response"
           >
             <ThumbsUp size={14} />
           </button>
           <button 
             onClick={() => onFeedback(message.id, message.feedback === 'negative' ? null : 'negative')}
-            className={`p-1.5 rounded hover:bg-white/10 transition-colors ${message.feedback === 'negative' ? 'text-red-400' : 'text-[#A8ABB4] hover:text-red-400'}`}
+            className={`p-1.5 rounded hover:bg-[var(--element-hover)] transition-colors ${message.feedback === 'negative' ? 'text-[var(--danger)]' : 'text-[var(--text-secondary)] hover:text-[var(--danger)]'}`}
             title="Bad response"
           >
             <ThumbsDown size={14} />
@@ -241,7 +249,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onConfirmSources, on
        if (message.text) {
           const rawMarkup = marked.parse(message.text) as string;
           return (
-             <div className="prose prose-sm prose-invert w-full min-w-0 max-w-none">
+             <div className="prose prose-sm w-full min-w-0 max-w-none">
                 <div dangerouslySetInnerHTML={{ __html: rawMarkup }} />
                 {message.isLoading && (
                   <span className="cursor-blink"></span>
@@ -253,11 +261,11 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onConfirmSources, on
        if (message.isLoading && !message.text) {
           return (
              <div className="flex flex-col gap-2">
-              <span className="text-xs text-[#A8ABB4] animate-pulse">Thinking...</span>
+              <span className="text-xs text-[var(--text-secondary)] animate-pulse">Thinking...</span>
               <div className="flex items-center space-x-1.5">
-                <div className={`w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:-0.3s] bg-[#A8ABB4]`}></div>
-                <div className={`w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:-0.15s] bg-[#A8ABB4]`}></div>
-                <div className={`w-1.5 h-1.5 rounded-full animate-bounce bg-[#A8ABB4]`}></div>
+                <div className={`w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:-0.3s] bg-[var(--text-secondary)]`}></div>
+                <div className={`w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:-0.15s] bg-[var(--text-secondary)]`}></div>
+                <div className={`w-1.5 h-1.5 rounded-full animate-bounce bg-[var(--text-secondary)]`}></div>
               </div>
             </div>
           );
@@ -267,23 +275,25 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onConfirmSources, on
     // User or System
     let textColorClass = '';
     if (isUser) {
-        textColorClass = 'text-white';
+        textColorClass = 'text-[var(--text-primary)]'; // User bubble handles background, text is white usually or adaptive
     } else if (isSystem) {
-        textColorClass = 'text-[#A8ABB4]';
+        textColorClass = 'text-[var(--text-secondary)]';
     } else { 
-        textColorClass = 'text-[#E2E2E2]';
+        textColorClass = 'text-[var(--text-primary)]';
     }
     return <div className={`whitespace-pre-wrap text-sm ${textColorClass}`}>{message.text}</div>;
   };
   
-  let bubbleClasses = "p-3 rounded-lg shadow w-full group relative "; 
+  let bubbleClasses = "p-3 rounded-lg shadow-sm w-full group relative transition-colors duration-200 "; 
 
   if (isUser) {
-    bubbleClasses += "bg-white/[.12] text-white rounded-br-none";
+    // User bubbles often look best with the Accent color or a distinct surface
+    // Using accent dim or a specific user-bubble color
+    bubbleClasses += "bg-[var(--element-hover)] text-[var(--text-primary)] rounded-br-none border border-[var(--border)]";
   } else if (isModel) {
-    bubbleClasses += `bg-[rgba(119,119,119,0.10)] border-t border-[rgba(255,255,255,0.04)] backdrop-blur-lg rounded-bl-none`;
+    bubbleClasses += `bg-[var(--panel-bg)] border border-[var(--border)] rounded-bl-none`;
   } else { // System message
-    bubbleClasses += "bg-[#2C2C2C] text-[#A8ABB4] rounded-bl-none";
+    bubbleClasses += "bg-[var(--element-bg)] text-[var(--text-secondary)] rounded-bl-none border border-[var(--border)]";
   }
 
   return (
@@ -295,8 +305,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onConfirmSources, on
           
           {/* Metadata: Context URLs */}
           {isModel && message.urlContext && message.urlContext.length > 0 && !message.isLoading && (
-            <div className="mt-3 pt-3 border-t border-[rgba(255,255,255,0.1)]">
-              <h4 className="text-xs font-semibold text-[#A8ABB4] mb-1">Context URLs Retrieved:</h4>
+            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+              <h4 className="text-xs font-semibold text-[var(--text-secondary)] mb-1">Context URLs Retrieved:</h4>
               <ul className="space-y-0.5">
                 {message.urlContext.map((meta, index) => {
                   const statusText = typeof meta.urlRetrievalStatus === 'string' 
@@ -305,14 +315,14 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onConfirmSources, on
                   const isSuccess = meta.urlRetrievalStatus === 'URL_RETRIEVAL_STATUS_SUCCESS';
 
                   return (
-                    <li key={index} className="text-[11px] text-[#A8ABB4]">
-                      <a href={meta.retrievedUrl} target="_blank" rel="noopener noreferrer" className="hover:underline break-all text-[#79B8FF]">
+                    <li key={index} className="text-[11px] text-[var(--text-secondary)]">
+                      <a href={meta.retrievedUrl} target="_blank" rel="noopener noreferrer" className="hover:underline break-all text-[var(--accent-text)]">
                         {meta.retrievedUrl}
                       </a>
                       <span className={`ml-1.5 px-1 py-0.5 rounded-sm text-[9px] ${
                         isSuccess
-                          ? 'bg-white/[.12] text-white'
-                          : 'bg-slate-600/30 text-slate-400'
+                          ? 'bg-[var(--element-hover)] text-[var(--text-primary)]'
+                          : 'bg-[var(--danger)]/20 text-[var(--danger)]'
                       }`}>
                         {statusText}
                       </span>

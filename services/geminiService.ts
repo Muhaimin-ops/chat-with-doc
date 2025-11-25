@@ -8,21 +8,29 @@
 import { GoogleGenAI, GenerateContentResponse, Tool, HarmCategory, HarmBlockThreshold, Content } from "@google/genai";
 import { UrlContextMetadataItem } from '../types';
 
-// IMPORTANT: The API key MUST be set as an environment variable `process.env.API_KEY`
-const API_KEY = process.env.API_KEY;
+// Default env key as fallback
+const ENV_API_KEY = process.env.API_KEY;
 
-let ai: GoogleGenAI;
+let ai: GoogleGenAI | null = null;
+let currentKey: string | null = null;
 
 // Model supporting URL context
 const MODEL_NAME = "gemini-2.5-flash"; 
 
 const getAiInstance = (): GoogleGenAI => {
-  if (!API_KEY) {
-    console.error("API_KEY is not set in environment variables. Please set process.env.API_KEY.");
-    throw new Error("Gemini API Key not configured. Set process.env.API_KEY.");
+  // Check local storage for user-provided key
+  const userKey = localStorage.getItem('DOCUMIND_API_KEY');
+  const activeKey = userKey || ENV_API_KEY;
+
+  if (!activeKey) {
+    console.error("API_KEY is not set. User must provide one in settings.");
+    throw new Error("API Key missing. Please add your API Key in Settings.");
   }
-  if (!ai) {
-    ai = new GoogleGenAI({ apiKey: API_KEY });
+
+  // Re-instantiate if key changed or not initialized
+  if (!ai || currentKey !== activeKey) {
+    ai = new GoogleGenAI({ apiKey: activeKey });
+    currentKey = activeKey;
   }
   return ai;
 };
@@ -33,6 +41,25 @@ const safetySettings = [
   { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
 ];
+
+const DOCUMIND_SYSTEM_INSTRUCTION = `Refined PRD for "Documind" an expert Technical Documentation Assistant. Your goal is to help developers implement SDKs and APIs by answering questions strictly based on the provided reference material.
+
+CORE DIRECTIVES
+1.  **Strict Grounding:** Answer **only** using the provided [CONTEXT]. Do not use outside knowledge.
+2.  **No Hallucinations:** If the answer is not in the context, state: *"I cannot find this information in the documentation."* Do not invent parameters or endpoints.
+3.  **Code First:** Prioritize code examples. Ensure all code is syntactically correct and uses appropriate Markdown tags (e.g., python, bash).
+4.  **Version Awareness:** Pay attention to version numbers in the context. If the user does not specify a version, assume the latest available in the context and note this assumption.
+
+RESPONSE RULES
+*   **Citation:** End every response with a reference to the source file or section title found in the context.
+    *   *Format:* > Source: [Section Title / File Name]
+*   **Style:** Technical, direct, and concise. No conversational filler.
+*   **Ambiguity:** If the user's question is vague, ask for clarification regarding the specific language or framework version.
+
+OUTPUT FORMAT
+*   **Text:** Clear explanations of logical steps.
+*   **Code:** Copy-paste ready snippets with comments explaining complex lines.
+*   **Links:** If a URL is present in the context, provide it as a reference.`;
 
 interface GeminiResponse {
   text: string;
@@ -48,24 +75,25 @@ export const generateContentWithUrlContext = async (
   prompt: string,
   urls: string[]
 ): Promise<GeminiResponse> => {
-  const currentAi = getAiInstance();
-  
-  let fullPrompt = prompt;
-  if (urls.length > 0) {
-    const urlList = urls.join('\n');
-    fullPrompt = `${prompt}\n\nRelevant URLs for context:\n${urlList}`;
-  }
-
-  const tools: Tool[] = [{ urlContext: {} }];
-  const contents: Content[] = [{ role: "user", parts: [{ text: fullPrompt }] }];
-
   try {
+    const currentAi = getAiInstance();
+    
+    let fullPrompt = prompt;
+    if (urls.length > 0) {
+      const urlList = urls.join('\n');
+      fullPrompt = `${prompt}\n\n[CONTEXT] Relevant URLs:\n${urlList}`;
+    }
+
+    const tools: Tool[] = [{ urlContext: {} }];
+    const contents: Content[] = [{ role: "user", parts: [{ text: fullPrompt }] }];
+
     const response: GenerateContentResponse = await currentAi.models.generateContent({
       model: MODEL_NAME,
       contents: contents,
       config: { 
         tools: tools,
         safetySettings: safetySettings,
+        systemInstruction: DOCUMIND_SYSTEM_INSTRUCTION,
       },
     });
 
@@ -81,7 +109,7 @@ export const generateContentWithUrlContext = async (
 
   } catch (error) {
     handleGeminiError(error);
-    return { text: "" }; // Unreachable due to throw, but satisfies TS
+    return { text: "" };
   }
 };
 
@@ -89,31 +117,31 @@ export async function* generateContentStreamWithUrlContext(
   prompt: string,
   urls: string[]
 ): AsyncGenerator<StreamYield, void, unknown> {
-  const currentAi = getAiInstance();
-
-  let fullPrompt = prompt;
-  if (urls.length > 0) {
-    const urlList = urls.join('\n');
-    fullPrompt = `${prompt}\n\nRelevant URLs for context:\n${urlList}`;
-  }
-
-  const tools: Tool[] = [{ urlContext: {} }];
-  const contents: Content[] = [{ role: "user", parts: [{ text: fullPrompt }] }];
-
   try {
+    const currentAi = getAiInstance();
+
+    let fullPrompt = prompt;
+    if (urls.length > 0) {
+      const urlList = urls.join('\n');
+      fullPrompt = `${prompt}\n\n[CONTEXT] Relevant URLs:\n${urlList}`;
+    }
+
+    const tools: Tool[] = [{ urlContext: {} }];
+    const contents: Content[] = [{ role: "user", parts: [{ text: fullPrompt }] }];
+
     const responseStream = await currentAi.models.generateContentStream({
       model: MODEL_NAME,
       contents: contents,
       config: {
         tools: tools,
         safetySettings: safetySettings,
+        systemInstruction: DOCUMIND_SYSTEM_INSTRUCTION,
       },
     });
 
     for await (const chunk of responseStream) {
        const textChunk = chunk.text || "";
        
-       // Check for metadata in the chunk
        let urlContextMetadata: UrlContextMetadataItem[] | undefined = undefined;
        if (chunk.candidates?.[0]?.urlContextMetadata?.urlMetadata) {
           urlContextMetadata = chunk.candidates[0].urlContextMetadata.urlMetadata as UrlContextMetadataItem[];
@@ -131,17 +159,17 @@ export const getInitialSuggestions = async (urls: string[]): Promise<GeminiRespo
   if (urls.length === 0) {
     return { text: JSON.stringify({ suggestions: ["Add some URLs to get topic suggestions."] }) };
   }
-  const currentAi = getAiInstance();
-  const urlList = urls.join('\n');
-  
-  const promptText = `Based on the content of the following documentation URLs, provide 3-4 concise and actionable questions a developer might ask to explore these documents. These questions should be suitable as quick-start prompts. Return ONLY a JSON object with a key "suggestions" containing an array of these question strings. For example: {"suggestions": ["What are the rate limits?", "How do I get an API key?", "Explain model X."]}
+  try {
+    const currentAi = getAiInstance();
+    const urlList = urls.join('\n');
+    
+    const promptText = `Based on the content of the following documentation URLs, provide 3-4 concise and actionable questions a developer might ask to explore these documents. These questions should be suitable as quick-start prompts. Return ONLY a JSON object with a key "suggestions" containing an array of these question strings. For example: {"suggestions": ["What are the rate limits?", "How do I get an API key?", "Explain model X."]}
 
 Relevant URLs:
 ${urlList}`;
 
-  const contents: Content[] = [{ role: "user", parts: [{ text: promptText }] }];
+    const contents: Content[] = [{ role: "user", parts: [{ text: promptText }] }];
 
-  try {
     const response: GenerateContentResponse = await currentAi.models.generateContent({
       model: MODEL_NAME,
       contents: contents,
@@ -156,22 +184,20 @@ ${urlList}`;
 
   } catch (error) {
     console.error("Error calling Gemini API for initial suggestions:", error);
-     if (error instanceof Error) {
-       // Error handling...
-       throw error;
-    }
-    throw new Error("Failed to get initial suggestions from AI.");
+    // Don't throw for suggestions, just return empty
+    return { text: JSON.stringify({ suggestions: [] }) };
   }
 };
 
 export const identifyRelevantUrls = async (query: string, urls: string[]): Promise<string[]> => {
   if (urls.length === 0) return [];
-  if (urls.length <= 3) return urls; // If few URLs, just return all of them
+  if (urls.length <= 3) return urls;
 
-  const currentAi = getAiInstance();
-  const urlList = urls.join('\n');
+  try {
+    const currentAi = getAiInstance();
+    const urlList = urls.join('\n');
 
-  const prompt = `You are an expert research assistant.
+    const prompt = `You are an expert research assistant.
 User Query: "${query}"
 
 Available Sources:
@@ -183,7 +209,6 @@ Select all that apply. If the query is broad, you may select multiple top-level 
 
 JSON Response:`;
 
-  try {
     const response: GenerateContentResponse = await currentAi.models.generateContent({
       model: MODEL_NAME,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -200,7 +225,6 @@ JSON Response:`;
         return parsed.relevant_urls;
       }
     }
-    // Fallback: return all if parsing fails or structure is wrong
     return urls;
   } catch (error) {
     console.warn("Failed to identify relevant URLs, defaulting to all.", error);
@@ -209,39 +233,32 @@ JSON Response:`;
 };
 
 export const fetchRelevantUrlsFromSearch = async (topic: string): Promise<string[]> => {
-  const currentAi = getAiInstance();
-  
-  const prompt = `Find 5 official documentation, authoritative guides, or high-quality source URLs for the following topic: "${topic}".
-  
-  Instructions:
-  1. Use Google Search to find the most relevant and up-to-date sources.
-  2. Prioritize official documentation (e.g., docs.python.org, react.dev, etc.).
-  3. Return ONLY a JSON object with a single key "urls" containing an array of the 5 best URL strings found.
-  4. Do not include any markdown formatting or explanation outside the JSON.
-  
-  JSON Response:`;
-
   try {
+    const currentAi = getAiInstance();
+    
+    const prompt = `Find 5 official documentation, authoritative guides, or high-quality source URLs for the following topic: "${topic}".
+    
+    Instructions:
+    1. Use Google Search to find the most relevant and up-to-date sources.
+    2. Prioritize official documentation (e.g., docs.python.org, react.dev, etc.).
+    3. Return ONLY a JSON object with a single key "urls" containing an array of the 5 best URL strings found.
+    4. Do not include any markdown formatting or explanation outside the JSON.
+    
+    JSON Response:`;
+
     const response: GenerateContentResponse = await currentAi.models.generateContent({
-      model: MODEL_NAME, // gemini-2.5-flash supports googleSearch
+      model: MODEL_NAME, 
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
         safetySettings: safetySettings,
       },
     });
 
     const text = response.text;
     
-    // We also look at grounding chunks as a fallback or enhancement, but strict JSON instruction usually works well with 2.5 Flash
-    // However, the tool instruction says "If Google Search is used, you MUST ALWAYS extract the URLs from groundingChunks".
-    // In this specific helper function case where we want a refined list *generated* by the model based on search, 
-    // relying on the model's JSON output is more appropriate for getting the "top 5" selection rather than raw search hits.
-    
     if (text) {
       try {
-        // Clean markdown fences if present
         let cleanText = text.trim();
         const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
         const match = cleanText.match(fenceRegex);
@@ -254,19 +271,18 @@ export const fetchRelevantUrlsFromSearch = async (topic: string): Promise<string
           return parsed.urls;
         }
       } catch (e) {
-        console.error("Failed to parse JSON from search result", e);
+        console.error("Failed to parse JSON from search result text", e);
       }
     }
 
-    // Fallback: If JSON parsing fails, try to extract from grounding metadata if available
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
     if (chunks) {
       const urlsFromChunks: string[] = [];
       chunks.forEach((chunk: any) => {
         if (chunk.web?.uri) urlsFromChunks.push(chunk.web.uri);
       });
-      // De-duplicate and return top 5
-      return Array.from(new Set(urlsFromChunks)).slice(0, 5);
+      const unique = Array.from(new Set(urlsFromChunks)).slice(0, 5);
+      if (unique.length > 0) return unique;
     }
 
     return [];
@@ -281,13 +297,13 @@ function handleGeminiError(error: unknown) {
     console.error("Error calling Gemini API:", error);
     if (error instanceof Error) {
       const googleError = error as any; 
-      if (googleError.message && googleError.message.includes("API key not valid")) {
-         throw new Error("Invalid API Key. Please check your GEMINI_API_KEY environment variable.");
+      if (googleError.message && (googleError.message.includes("API key not valid") || googleError.message.includes("API Key missing"))) {
+         throw new Error("Invalid or Missing API Key. Please check settings.");
       }
       if (googleError.message && googleError.message.includes("quota")) {
-        throw new Error("API quota exceeded. Please check your Gemini API quota.");
+        throw new Error("API quota exceeded.");
       }
-      throw new Error(`Failed to get response from AI: ${error.message}`);
+      throw new Error(`${error.message}`);
     }
-    throw new Error("Failed to get response from AI due to an unknown error.");
+    throw new Error("Unknown AI error.");
 }
