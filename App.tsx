@@ -212,8 +212,8 @@ const App: React.FC = () => {
     }
   };
 
-  const activeGroup = urlGroups.find(group => group.id === activeUrlGroupId);
-  const currentUrlsForChat = activeGroup ? activeGroup.urls : [];
+  const activeGroup = useMemo(() => urlGroups.find(group => group.id === activeUrlGroupId), [urlGroups, activeUrlGroupId]);
+  const currentUrlsForChat = useMemo(() => activeGroup ? activeGroup.urls : [], [activeGroup]);
 
   const setWelcomeMessage = (group?: URLGroup) => {
        // Check if API key is likely available (env or local)
